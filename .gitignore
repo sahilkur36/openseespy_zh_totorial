@@ -3,11 +3,15 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+
 # .ai file
 *.ai
 
 # C extensions
 *.so
+
+# results dir
+Case2_Parametric_Simple_Supported_Bridge/Results
 
 # Distribution / packaging
 .Python

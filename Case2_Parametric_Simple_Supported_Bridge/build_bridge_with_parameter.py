@@ -1,24 +1,28 @@
 from __future__ import annotations
-import openseespy.opensees as ops
-import numpy as np
-from pyDOE import lhs
-import multiprocessing as mp
-from dataclasses import dataclass
-from typing import List, Tuple, Literal
-from pathlib import Path
-from scipy.stats import uniform, norm, lognorm
-import opstool as opst
-from collections import defaultdict
+
 import json
+import multiprocessing as mp
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Literal, Tuple
+import uuid
+
+import h5py
+import numpy as np
+import openseespy.opensees as ops
+import opstool as opst
+from pyDOE import lhs
 from rich.console import Group
-from rich.panel import Panel
 from rich.live import Live
+from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     Progress,
     TextColumn,
     TimeElapsedColumn,
 )
+from scipy.stats import lognorm, norm, uniform
 
 def progress_listener(progress_queue, total_tasks):
     # 创建进度条实例
@@ -88,6 +92,10 @@ class BridgeSample:
     initial_stiffness: float
     earthquake_record: str
 
+    # 将 BridgeSample 转换为 JSON 可保存的字典
+    def to_dict(self) -> dict:
+        return BridgeSample.samples_to_dict([self])[0]
+
     @staticmethod
     def samples_to_dict(samples: List[BridgeSample]) -> List[dict]:
         """ 将 BridgeSample 列表转换为 JSON 可保存的字典 """
@@ -135,7 +143,7 @@ class BridgeParameters:
     friction_force_range: Tuple[float, float]
     initial_stiffness_range: Tuple[float, float]
     earthquake_records: List[str]
-    samples_file:Path = Path("./samples.txt")
+    samples_file:Path = Path(__file__).parent / ("samples.txt")
 
     def sample_parameters(self, num_samples: int) -> List[BridgeSample]:
         if self.samples_file.exists():
@@ -167,24 +175,6 @@ class BridgeParameters:
             )
             samples.append(sample)
         return samples
-
-def recorderfunc(results: defaultdict):
-    Accel = ops.nodeAccel(1000+int(10/2)+1, 1)  # 获取主梁中间节点的x向加速度
-    results["Accel"].append(Accel)
-    disp = ops.nodeDisp(100+5+1, *[1,5])  # 获取左墩墩顶节点的x向位移和转角
-    results["Disp"].append(disp)
-    for etag in ops.getEleTags():  # 可以很方便的遍历单元号（如果需要）
-        # 提单元内力
-        resp = ops.eleResponse(etag, "localForce")
-        results[f"AxisForce-Ele{etag}"].append(resp)
-        # 提取单元变形
-        resp = ops.eleResponse(etag, "deformation")
-        results[f"AxisDefo-Ele{etag}"].append(resp)
-        # 提取单元上材料应力应变
-        resp = ops.eleResponse(etag, "material", "stressStrain")
-        results[f"stressStrain-Ele{etag}"].append(resp)
-        
-    results["Time"].append(ops.getTime())  # 别忘了每步对应的时间
 
 def define_sections(verbose=False):
     # 定义截面
@@ -380,14 +370,10 @@ def build_bridge_model(params,progress_queue = None,task_id = None, verbose=Fals
         n_bear = 10
         ops.uniaxialMaterial('Elastic', 9901, n_bear*params.initial_stiffness)
         ops.uniaxialMaterial('Steel01', 9902, params.friction_force, n_bear*params.initial_stiffness, 0.000001)
-        # ops.element('zeroLength', 11, *[100+nH+1, 1001], '-mat', *[9902, 9902, 9901, rigid_tag, free_tag, free_tag], '-dir', *[1, 2, 3, 4, 5, 6])
-        # ops.element('zeroLength', 21, *[200+nH+1, 1000+nL+1], '-mat', *[9902, 9902, 9901, rigid_tag, free_tag, free_tag], '-dir', *[1, 2, 3, 4, 5, 6])
         for i in range(NSPAN+1):
             girder_node = (i+1)*1000+1 if i == 0 else i*1000+nL+1
             ops.element('zeroLength', (i+1)*10+1, *[(i+1)*100+nH+1, girder_node], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
     elif params.bearing_type == 'Frame':
-        # ops.element('zeroLength', 11, *[100+nH+1, 1001], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
-        # ops.element('zeroLength', 21, *[200+nH+1, 1000+nL+1], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
         for i in range(NSPAN+1):
             girder_node = (i+1)*1000+1 if i == 0 else i*1000+nL+1
             ops.element('zeroLength', (i+1)*10+1, *[(i+1)*100+nH+1, girder_node], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
@@ -404,8 +390,7 @@ def build_bridge_model(params,progress_queue = None,task_id = None, verbose=Fals
 def earthquake_analysis(params,
                         progress_queue = None,
                         task_id = None,
-                        verbose=False,
-                        *args):
+                        verbose=False):
     # 地震动分析
     # 删除旧的分析
     ops.wipeAnalysis()
@@ -464,9 +449,28 @@ def earthquake_analysis(params,
                             on_notebook=False)
     return results
 
+def recorderfunc(results: defaultdict):
+    Accel = ops.nodeAccel(1000+int(10/2)+1, 1)  # 获取主梁中间节点的x向加速度
+    results["Accel"].append(Accel)
+    disp = ops.nodeDisp(100+5+1, *[1,5])  # 获取左墩墩顶节点的x向位移和转角
+    results["Disp"].append(disp)
+    for etag in ops.getEleTags():  # 可以很方便的遍历单元号（如果需要）
+        # 提单元内力
+        resp = ops.eleResponse(etag, "localForce")
+        results[f"localForce-Ele{etag}"].append(resp)
+        # 提取单元变形(输出积分点1的变形)
+        resp = ops.eleResponse(etag, 'section', 1,"deformation")
+        results[f"AxisDefo-Ele{etag}"].append(resp)
+        # 提取单元上材料应力应变
+        # resp = ops.eleResponse(etag, "material", "stressStrain")
+        # results[f"stressStrain-Ele{etag}"].append(resp)
+        
+    results["Time"].append(ops.getTime())  # 别忘了每步对应的时间
+
+
 def run_earthquake_analysis(nsteps:int,
                             dt:float,
-                            recorderfunc,
+                            recorderfunc = recorderfunc,
                             progress_queue = None,
                             task_id = None,
                             verbose:bool=False,
@@ -497,13 +501,66 @@ def run_earthquake_analysis(nsteps:int,
                 
     return RESULTS
 
-def run_simulation(sample,progress_queue = None, result_queue=None, task_id = None, verbose=False):
-    build_bridge_model(sample,progress_queue,task_id)
+# 将字典写入 h5py 文件
+def write_dict_to_h5py(filename, data_dict):
+    with h5py.File(filename, 'w') as h5file:
+        def recursively_save_dict_contents(h5file, data, path="/"):
+            for key, value in data.items():
+                current_path = f"{path}/{key}"
+                if isinstance(value, dict):  # 如果值是字典，递归保存
+                    recursively_save_dict_contents(h5file, value, current_path)
+                elif isinstance(value, (np.ndarray, int, float)):  # 基本数据类型
+                    h5file[current_path] = value
+                elif isinstance(value, str):  # 对于字符串，直接保存
+                    h5file[current_path] = np.string_(value)
+                elif isinstance(value, list):  # 对于列表，尝试转换为 numpy 数组
+                    try:
+                        h5file[current_path] = np.array(value)
+                    except Exception as e:
+                        print(f"Failed to convert list to array for key: {key}, error: {e}")
+                        try:
+                            h5file[current_path] = str(value)
+                        except TypeError as e:
+                            print(f"Failed to save key: {key}, error: {e}")
+                            continue
+                else:
+                    # 如果数据类型不兼容，将其转换为 str 字符串
+                    try:
+                        h5file[current_path] = str(value)
+                    except TypeError as e:
+                        print(f"Failed to save key: {key}, error: {e}")
+                        continue
+
+        recursively_save_dict_contents(h5file, data_dict)
+
+def run_simulation(sample, progress_queue, result_queue, task_id, verbose=False):
+    build_bridge_model(sample, progress_queue, task_id, verbose)
     # 地震分析
-    results = earthquake_analysis(sample,progress_queue,task_id,verbose)
-    result_to_put = {"task_id": task_id, "sample": sample, "result": results}
+    results = earthquake_analysis(sample, progress_queue, task_id, verbose)
+    # 注意defaultdict不是pickable(可序列化)的，不能直接在进程间传递，需要转换为dict
+    # 同时另需注意的是，即使转为dict也不意味着就能传递，pickable同样要求数据大小不超过32MB
+    # 因此此处仅仅传递一个唯一标识符uuid,后处理时通过uuid找到对应的结果
+    random_uuid = uuid.uuid4()
+    result_to_put = {"task_id": task_id, "sample": sample.to_dict(), "uuid": str(random_uuid)}
     result_queue.put(result_to_put)
-    return results
+    print("successfully put result at task_id", task_id)
+
+    full_result = {"task_id": task_id, "sample": sample.to_dict(), "uuid": str(random_uuid), "result": dict(results)}
+
+    # for key, value in full_result.items():
+    #     full_result[key] = np.array(value)
+
+    # 创建Results文件夹，如果不存在
+    results_dir = Path(__file__).parent / 'Results'
+    results_dir.mkdir(exist_ok=True)
+
+    # # 保存到json文件
+    # with open(results_dir / f"{random_uuid}.json", 'w') as f:
+    #     json.dump(full_result, f, indent=4)
+
+    # 保存结果到hdf5文件,文件名采用uuid
+    write_dict_to_h5py(results_dir / f"{random_uuid}.h5", full_result)
+    # return results
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
@@ -520,7 +577,8 @@ if __name__ == "__main__":
         bearing_types=["Rubber", "Frame"],
         friction_force_range=(2000, 5000),
         initial_stiffness_range=(5000, 10000),
-        earthquake_records=[file for file in wavepath.glob("*.txt") if file.stem.isdigit()]
+        earthquake_records=[file for file in wavepath.glob("*.txt") if file.stem.isdigit()],
+        samples_file=sample_file
     )
 
     samples = bridge_params.sample_parameters(num_samples=2)
@@ -547,34 +605,19 @@ if __name__ == "__main__":
         processes.append(p)
         p.start()
 
-    # 等待所有子进程完成
+    # Wait for child processes to finish
     for p in processes:
         p.join()
 
-    # 等待监听器完成
+    # Wait for listener to finish
     listener.join()
 
-    # 收集所有结果
+    # Collect results
     results = []
     while not result_queue.empty():
-        results.append(result_queue.get())
+        result = result_queue.get()
+        results.append(result)
 
-    # 打印所有结果
+    # Print results
     for result in results:
         print(result)
-
-    a=1
-
-    # # Convert results to numpy array for visualization
-    # results_array = np.array(results)
-
-    # # Plot the results
-    # plt.figure(figsize=(10, 6))
-    # for i, result in enumerate(results_array):
-    #     plt.plot(result, label=f'Sample {i+1}')
-    
-    # plt.xlabel('Time Step')
-    # plt.ylabel('Displacement')
-    # plt.title('Bridge Displacement Over Time')
-    # plt.legend()
-    # plt.show()
