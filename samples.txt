@@ -1,0 +1,47 @@
+[
+    {
+        "pier_height": 41.559766610309985,
+        "span_length": 67.38069665726663,
+        "num_spans": 5,
+        "bearing_type": "Frame",
+        "friction_force": 3764.0126929167172,
+        "initial_stiffness": 87449.8081719263,
+        "earthquake_record": "/workspaces/openseespy_zh_totorial/Case2_Parametric_Simple_Supported_Bridge/Waves/2.txt"
+    },
+    {
+        "pier_height": 45.754489957465886,
+        "span_length": 49.90054324746602,
+        "num_spans": 6,
+        "bearing_type": "Rubber",
+        "friction_force": 3074.333337030782,
+        "initial_stiffness": 122315.92644407607,
+        "earthquake_record": "/workspaces/openseespy_zh_totorial/Case2_Parametric_Simple_Supported_Bridge/Waves/3.txt"
+    },
+    {
+        "pier_height": 18.946994550307327,
+        "span_length": 94.7410978063128,
+        "num_spans": 8,
+        "bearing_type": "Frame",
+        "friction_force": 3226.9983422161995,
+        "initial_stiffness": 78080.59875572832,
+        "earthquake_record": "/workspaces/openseespy_zh_totorial/Case2_Parametric_Simple_Supported_Bridge/Waves/3.txt"
+    },
+    {
+        "pier_height": 28.918134890115617,
+        "span_length": 79.86282728609888,
+        "num_spans": 7,
+        "bearing_type": "Rubber",
+        "friction_force": 2441.5317091282686,
+        "initial_stiffness": 29689.81924699152,
+        "earthquake_record": "/workspaces/openseespy_zh_totorial/Case2_Parametric_Simple_Supported_Bridge/Waves/1.txt"
+    },
+    {
+        "pier_height": 14.692870129531187,
+        "span_length": 30.452388549974952,
+        "num_spans": 3,
+        "bearing_type": "Rubber",
+        "friction_force": 1822.0534378346429,
+        "initial_stiffness": 49347.445434519104,
+        "earthquake_record": "/workspaces/openseespy_zh_totorial/Case2_Parametric_Simple_Supported_Bridge/Waves/4.txt"
+    }
+]
