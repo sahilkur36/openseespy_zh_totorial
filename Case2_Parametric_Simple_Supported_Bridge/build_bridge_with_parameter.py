@@ -47,7 +47,7 @@ def progress_listener(progress_queue, total_tasks):
         while completed_tasks < total_tasks:
             try:
                 message = progress_queue.get(timeout=0.1)
-            except:
+            except Exception:
                 continue
 
             if message[0] == 'DONE':
@@ -376,7 +376,11 @@ def build_bridge_model(params,progress_queue = None,task_id = None, verbose=Fals
     # 进行重力分析
     gravity_analysis(verbose)
 
-def earthquake_analysis(params,verbose=False,*args):
+def earthquake_analysis(params,
+                        progress_queue = None,
+                        task_id = None,
+                        verbose=False,
+                        *args):
     # 地震动分析
     # 删除旧的分析
     ops.wipeAnalysis()
@@ -434,8 +438,10 @@ def earthquake_analysis(params,verbose=False,*args):
                             dt = dt,
                             recorderfunc=recorderfunc,
                             recorderdict=RESULTS,
+                            progress_queue = progress_queue,
+                            task_id = task_id,
                             verbose=verbose,
-                            on_notebook=False,*args)
+                            on_notebook=False)
     return results
 
 def run_earthquake_analysis(nsteps:int,
