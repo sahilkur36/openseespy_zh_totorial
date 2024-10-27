@@ -65,10 +65,18 @@ def progress_listener(progress_queue, total_tasks):
                 total_value = message[3]
 
                 if worker_id not in task_ids:
-                    task_id = task_progress.add_task(f"Worker {worker_id}", total=total_value, name=f"Worker {worker_id}")
+                    task_id = task_progress.add_task(
+                        f"Worker {worker_id}", 
+                        total=total_value, 
+                        name=f"Case {worker_id}"
+                    )
                     task_ids[worker_id] = task_id
 
-                task_progress.update(task_ids[worker_id], completed=progress_value)
+                task_progress.update(
+                    task_ids[worker_id], 
+                    completed=progress_value,
+                    description=f"{progress_value}/{total_value} steps"
+                )
 
 @dataclass
 class BridgeSample:
@@ -447,14 +455,9 @@ def earthquake_analysis(params,
     axis = 1    # 地震动输入方向
     ops.pattern('UniformExcitation', 2, axis, '-accel', ts_tag)
 
-    # 定义一个字典用于存储结果
-    RESULTS = defaultdict(lambda: [])
-    RESULTS["params"] = params  # 保存参数
-
     results = run_earthquake_analysis(nsteps = nsteps,
                             dt = dt,
                             recorderfunc=recorderfunc,
-                            recorderdict=RESULTS,
                             progress_queue = progress_queue,
                             task_id = task_id,
                             verbose=verbose,
@@ -464,11 +467,12 @@ def earthquake_analysis(params,
 def run_earthquake_analysis(nsteps:int,
                             dt:float,
                             recorderfunc,
-                            recorderdict:defaultdict,
                             progress_queue = None,
                             task_id = None,
                             verbose:bool=False,
                             on_notebook=False):
+    # 定义一个字典用于存储结果
+    RESULTS = defaultdict(lambda: [])
     if on_notebook:
         from IPython.display import clear_output
 
@@ -483,7 +487,7 @@ def run_earthquake_analysis(nsteps:int,
         analysis.TransientAnalyze(dt)  # 分析一个dt
 
         # 第二种记录方法，每步利用提取函数提取响应
-        recorderfunc(recorderdict)
+        recorderfunc(RESULTS)
 
         # 发送进度更新
         progress_queue.put(('PROGRESS', task_id, idx + 1, nsteps))
@@ -491,12 +495,14 @@ def run_earthquake_analysis(nsteps:int,
     # 任务完成后，发送完成信号
     progress_queue.put(('DONE', task_id))
                 
-    return recorderdict
+    return RESULTS
 
-def run_simulation(sample,progress_queue = None,task_id = None, verbose=False):
+def run_simulation(sample,progress_queue = None, result_queue=None, task_id = None, verbose=False):
     build_bridge_model(sample,progress_queue,task_id)
     # 地震分析
     results = earthquake_analysis(sample,progress_queue,task_id,verbose)
+    result_to_put = {"task_id": task_id, "sample": sample, "result": results}
+    result_queue.put(result_to_put)
     return results
 
 if __name__ == "__main__":
@@ -517,7 +523,7 @@ if __name__ == "__main__":
         earthquake_records=[file for file in wavepath.glob("*.txt") if file.stem.isdigit()]
     )
 
-    samples = bridge_params.sample_parameters(num_samples=5)
+    samples = bridge_params.sample_parameters(num_samples=2)
     BridgeSample.save_samples_as_json(samples, bridge_params.samples_file)
     
     for sample in samples:
@@ -525,6 +531,7 @@ if __name__ == "__main__":
 
     # 创建进程间队列
     progress_queue = mp.Queue()
+    result_queue = mp.Queue()
     total_tasks = len(samples)
 
     # 启动进度监听器
@@ -536,7 +543,7 @@ if __name__ == "__main__":
     for task_id, sample in enumerate(samples):
         recorderdict = defaultdict()
         p = mp.Process(target=run_simulation, args=(
-            sample, progress_queue, task_id))
+            sample, progress_queue, result_queue, task_id,))
         processes.append(p)
         p.start()
 
@@ -547,6 +554,16 @@ if __name__ == "__main__":
     # 等待监听器完成
     listener.join()
 
+    # 收集所有结果
+    results = []
+    while not result_queue.empty():
+        results.append(result_queue.get())
+
+    # 打印所有结果
+    for result in results:
+        print(result)
+
+    a=1
 
     # # Convert results to numpy array for visualization
     # results_array = np.array(results)
