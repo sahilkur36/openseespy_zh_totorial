@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# .ai file
+*.ai
+
 # C extensions
 *.so
 
