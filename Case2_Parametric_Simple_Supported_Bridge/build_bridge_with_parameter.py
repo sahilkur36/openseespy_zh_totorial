@@ -269,11 +269,12 @@ def build_bridge_model(params,progress_queue = None,task_id = None, verbose=Fals
     示例:
         from pathlib import Path
         params = {
-            'span_length': 30,
-            'pier_height': 10,
-            'bearing_type': 'Rubber',
-            'initial_stiffness': 1000,
-            'friction_force': 0.5,
+            "pier_height": 41.559766610309985,
+            "span_length": 67.38069665726663,
+            "num_spans": 5,
+            "bearing_type": "Frame",
+            "friction_force": 3764.0126929167172,
+            "initial_stiffness": 87449.8081719263,
             'earthquake_record': Path('path/to/record.txt')
         }
         results = build_bridge_model(params)
@@ -288,6 +289,7 @@ def build_bridge_model(params,progress_queue = None,task_id = None, verbose=Fals
     # ====== 参数定义 ====== #
     L = params.span_length  # 跨度长度(m)
     H = params.pier_height  # 墩高(m)
+    NSPAN = params.num_spans  # 跨数
     nH, nL = 5, 10  # 高度和长度方向的分段数
 
     g = 9.81  # 重力加速度(m/s^2)
@@ -296,29 +298,31 @@ def build_bridge_model(params,progress_queue = None,task_id = None, verbose=Fals
 
     # 创建墩的节点并添加质量
     y = 0.0  # 所有点y坐标均为0
-    for i in range(2):
+    for i in range(NSPAN + 1):
         x = i * L
         for j in range(nH+1):
             z = j * H / nH
             node_tag = (i+1)*100 + j+1
             ops.node(node_tag, x, y, z)
             M = m_pier*H
-            m = M/nH/2 if (i == 0 or i == nH) else M/nH
+            m = M/nH/2 if (j == 0 or j == nH) else M/nH
             ops.mass(node_tag, m, m, m, 0.0, 0.0, 0.0)
 
     # 创建主梁的节点
-    for i in range(nL+1):
-        x = i * L / nL
-        z = H
-        node_tag = 1000 + i+1
-        ops.node(node_tag, x, y, z)
-        M = m_girder*L
-        m = M/nL/2 if (i == 0 or i == nL) else M/nL
-        ops.mass(node_tag, m, m, m, 0.0, 0.0, 0.0)
+    for i in range(NSPAN):
+        x0 = i * L
+        for j in range(nL+1):
+            x = x0 + j * L / nL
+            z = H
+            node_tag = (i+1)*1000 + j+1
+            ops.node(node_tag, x, y, z)
+            M = m_girder*L
+            m = M/nL/2 if (j == 0 or j == nL) else M/nL
+            ops.mass(node_tag, m, m, m, 0.0, 0.0, 0.0)
 
     # 固定墩柱底部
-    ops.fix(101, 1, 1, 1, 1, 1, 1)
-    ops.fix(201, 1, 1, 1, 1, 1, 1)
+    fixed_dofs = [1,1,1,1,1,1]
+    [ops.fix((i+1)*100 + 1, *fixed_dofs) for i in range(NSPAN+1)]
 
     pier_sec = define_sections(verbose)
 
@@ -331,7 +335,7 @@ def build_bridge_model(params,progress_queue = None,task_id = None, verbose=Fals
     # 使用Lobatto积分，id为2
     ops.beamIntegration('Lobatto', 2, pier_sec, NP)
     # 使用塑性梁柱单元创建桥墩
-    for i in range(2):
+    for i in range(NSPAN+1):
         for j in range(nH):
             node1 = (i+1)*100 + j+1
             node2 = (i+1)*100 + j+2
@@ -345,12 +349,19 @@ def build_bridge_model(params,progress_queue = None,task_id = None, verbose=Fals
     ops.geomTransf('Linear', 2, 0, 1, 0)
 
     # 创建弹性梁单元
-    for i in range(nL):
-        ele_tag = 1000 + i + 1
-        node1 = 1000 + i + 1
-        node2 = node1 + 1
-        #                                    tag, ndI,     ndJ,    A,     E,   Iz,   Iy,    G,    J, transfTag
-        ops.element('elasticBeamColumn', ele_tag, node1, node2, 0.86, 210e6, 23.2, 2.32, 81e6, 3.13, 2)
+    for i in range(NSPAN):
+        for j in range(nL):
+            ele_tag = (i+1)*1000 + j + 1
+            node1 = (i+1)*1000 + j + 1
+            node2 = node1 + 1
+            #                                    tag, ndI,     ndJ,    A,     E,   Iz,   Iy,    G,    J, transfTag
+            ops.element('elasticBeamColumn', ele_tag, node1, node2, 0.86, 210e6, 23.2, 2.32, 81e6, 3.13, 2)
+
+    # 主梁连续构造(同一位置，可使用eqDOF)
+    for i in range(1,NSPAN):
+        node1 = i*1000 + nL +1  # 左侧主梁最右侧节点
+        node2 = (i+1)*1000 + 1  # 右侧主梁最左侧节点
+        ops.equalDOF(node1, node2, *[1, 2, 3, 4, 5, 6])
 
     # 定义支座
     rigid_tag, free_tag = 9903, 9904
@@ -361,11 +372,17 @@ def build_bridge_model(params,progress_queue = None,task_id = None, verbose=Fals
         n_bear = 10
         ops.uniaxialMaterial('Elastic', 9901, n_bear*params.initial_stiffness)
         ops.uniaxialMaterial('Steel01', 9902, params.friction_force, n_bear*params.initial_stiffness, 0.000001)
-        ops.element('zeroLength', 11, *[100+nH+1, 1001], '-mat', *[9902, 9902, 9901, rigid_tag, free_tag, free_tag], '-dir', *[1, 2, 3, 4, 5, 6])
-        ops.element('zeroLength', 21, *[200+nH+1, 1000+nL+1], '-mat', *[9902, 9902, 9901, rigid_tag, free_tag, free_tag], '-dir', *[1, 2, 3, 4, 5, 6])
+        # ops.element('zeroLength', 11, *[100+nH+1, 1001], '-mat', *[9902, 9902, 9901, rigid_tag, free_tag, free_tag], '-dir', *[1, 2, 3, 4, 5, 6])
+        # ops.element('zeroLength', 21, *[200+nH+1, 1000+nL+1], '-mat', *[9902, 9902, 9901, rigid_tag, free_tag, free_tag], '-dir', *[1, 2, 3, 4, 5, 6])
+        for i in range(NSPAN+1):
+            girder_node = (i+1)*1000+1 if i == 0 else i*1000+nL+1
+            ops.element('zeroLength', (i+1)*10+1, *[(i+1)*100+nH+1, girder_node], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
     elif params.bearing_type == 'Frame':
-        ops.element('zeroLength', 11, *[100+nH+1, 1001], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
-        ops.element('zeroLength', 21, *[200+nH+1, 1000+nL+1], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
+        # ops.element('zeroLength', 11, *[100+nH+1, 1001], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
+        # ops.element('zeroLength', 21, *[200+nH+1, 1000+nL+1], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
+        for i in range(NSPAN+1):
+            girder_node = (i+1)*1000+1 if i == 0 else i*1000+nL+1
+            ops.element('zeroLength', (i+1)*10+1, *[(i+1)*100+nH+1, girder_node], '-mat', *[rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag, rigid_tag], '-dir', *[1, 2, 3, 4, 5, 6])
     else:
         raise NotImplementedError(f"支座类型{params.bearing_type}未实现")
     if verbose:
@@ -503,15 +520,8 @@ if __name__ == "__main__":
     samples = bridge_params.sample_parameters(num_samples=5)
     BridgeSample.save_samples_as_json(samples, bridge_params.samples_file)
     
-    # for sample in samples:
-    #     print(sample)
-
-    # Run the main simulation
-    # print(samples[0])
-    # results = build_bridge_model(samples[0])
-
-    # with mp.Pool(processes=mp.cpu_count()) as pool:
-    #     results = pool.map(run_simulation, samples)
+    for sample in samples:
+        print(sample)
 
     # 创建进程间队列
     progress_queue = mp.Queue()
