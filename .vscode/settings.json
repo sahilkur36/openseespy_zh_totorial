@@ -1,7 +1,0 @@
-{
-    "python.testing.pytestArgs": [
-        "Case2_Parametric_Simple_Supported_Bridge"
-    ],
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
-}
