@@ -43,6 +43,7 @@ def progress_listener(progress_queue, total_tasks):
         Panel(overall_progress),
     )
 
+    # 使用 Live 实例实时刷新进度条
     with Live(progress_group, refresh_per_second=10):
         overall_task = overall_progress.add_task("总进度", total=total_tasks)
         task_ids = {}
@@ -50,6 +51,7 @@ def progress_listener(progress_queue, total_tasks):
 
         while completed_tasks < total_tasks:
             try:
+                # 从队列中获取消息
                 message = progress_queue.get(timeout=0.1)
             except Exception:
                 continue
@@ -522,14 +524,14 @@ def write_dict_to_h5py(filename, data_dict):
                             h5file[current_path] = str(value)
                         except TypeError as e:
                             print(f"Failed to save key: {key}, error: {e}")
-                            continue
+                            continue    # 仍不行忽略
                 else:
                     # 如果数据类型不兼容，将其转换为 str 字符串
                     try:
                         h5file[current_path] = str(value)
                     except TypeError as e:
                         print(f"Failed to save key: {key}, error: {e}")
-                        continue
+                        continue    # 仍不行忽略
 
         recursively_save_dict_contents(h5file, data_dict)
 
