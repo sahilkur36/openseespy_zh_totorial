@@ -16,6 +16,9 @@ pier_force.txt
 # C extensions
 *.so
 
+# results dir
+Case2_Parametric_Simple_Supported_Bridge/Results
+
 # Distribution / packaging
 .Python
 build/
