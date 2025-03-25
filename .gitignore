@@ -9,7 +9,7 @@ _OPSTOOL_ODB/
 girder_acc.txt
 pier_disp.txt
 pier_force.txt
-.gif
+*.gif
 
 # .ai file
 *.ai
