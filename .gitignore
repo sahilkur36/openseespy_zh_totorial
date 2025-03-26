@@ -2,14 +2,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.hdf5
-*.html
 *.nc
 _OPSTOOL_ODB/
 girder_acc.txt
 pier_disp.txt
 pier_force.txt
-*.gif
 
 # .ai file
 *.ai
